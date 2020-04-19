@@ -12,7 +12,7 @@
 <body>
     <div class="Info">Normal Maps</div>
     <script type="module">
-        import {Renderer, Camera, Transform, Texture, Program, Geometry, Mesh, Orbit} from '../src/index.mjs';
+        import {Renderer, Camera, Transform, Texture, Program, Geometry, Mesh, Orbit, BoxRounded} from '../src/index.mjs';
         
         const vertex100 = /* glsl */ `
             precision highp float;
@@ -218,7 +218,9 @@
                     normal: {size: 3, data: new Float32Array(data.normal)},
                 });
 
-                const mesh = new Mesh(gl, {geometry, program});
+                console.log(new BoxRounded(gl))
+
+                const mesh = new Mesh(gl, {geometry: new BoxRounded(gl), program});
                 mesh.setParent(scene);
             }
 
