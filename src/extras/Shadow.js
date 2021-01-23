@@ -1,100 +1,100 @@
-import {Camera} from '../core/Camera.js';
-import {Program} from '../core/Program.js';
-import {RenderTarget} from '../core/RenderTarget.js';
+import { Camera } from "../core/Camera.js";
+import { Program } from "../core/Program.js";
+import { RenderTarget } from "../core/RenderTarget.js";
 
 export class Shadow {
-    constructor(gl, {
-        light = new Camera(gl),
-        width = 1024,
-        height = width,
-    }) {
-        this.gl = gl;
+  constructor(gl, { light = new Camera(gl), width = 512, height = width }) {
+    this.gl = gl;
 
-        this.light = light;
-        
-        this.target = new RenderTarget(gl, {width, height});
+    this.light = light;
 
-        this.depthProgram = new Program(gl, {
-            vertex: defaultVertex,
-            fragment: defaultFragment,
-            cullFace: null,
-        });
+    this.target = new RenderTarget(gl, { width, height });
 
-        this.castMeshes = [];
+    this.depthProgram = new Program(gl, {
+      vertex: defaultVertex,
+      fragment: defaultFragment,
+      cullFace: null,
+    });
+
+    this.castMeshes = [];
+  }
+
+  add({
+    mesh,
+    receive = true,
+    cast = true,
+    vertex = defaultVertex,
+    fragment = defaultFragment,
+    uniformProjection = "shadowProjectionMatrix",
+    uniformView = "shadowViewMatrix",
+    uniformTexture = "tShadow",
+  }) {
+    // Add uniforms to existing program
+    if (receive && !mesh.program.uniforms[uniformProjection]) {
+      mesh.program.uniforms[uniformProjection] = {
+        value: this.light.projectionMatrix,
+      };
+      mesh.program.uniforms[uniformView] = { value: this.light.viewMatrix };
+      mesh.program.uniforms[uniformTexture] = { value: this.target.texture };
     }
 
-    add({
-        mesh,
-        receive = true,
-        cast = true,
-        vertex = defaultVertex,
-        fragment = defaultFragment,
-        uniformProjection = 'shadowProjectionMatrix',
-        uniformView = 'shadowViewMatrix',
-        uniformTexture = 'tShadow',
-    }) {
+    if (!cast) return;
+    this.castMeshes.push(mesh);
 
-        // Add uniforms to existing program
-        if (receive && !mesh.program.uniforms[uniformProjection]) {
-            mesh.program.uniforms[uniformProjection] = {value: this.light.projectionMatrix};
-            mesh.program.uniforms[uniformView] = {value: this.light.viewMatrix};
-            mesh.program.uniforms[uniformTexture] = {value: this.target.texture};
-        }
+    // Store program for when switching between depth override
+    mesh.colorProgram = mesh.program;
 
-        if (!cast) return;
-        this.castMeshes.push(mesh);
+    // Check if depth program already attached
+    if (mesh.depthProgram) return;
 
-        // Store program for when switching between depth override
-        mesh.colorProgram = mesh.program;
-
-        // Check if depth program already attached
-        if (mesh.depthProgram) return;
-
-        // Use global depth override if nothing custom passed in
-        if (vertex === defaultVertex && fragment === defaultFragment) {
-            mesh.depthProgram = this.depthProgram;
-            return;
-        }
-
-        // Create custom override program
-        mesh.depthProgram = new Program(gl, {
-            vertex,
-            fragment,
-            cullFace: null,
-        });
+    // Use global depth override if nothing custom passed in
+    if (vertex === defaultVertex && fragment === defaultFragment) {
+      mesh.depthProgram = this.depthProgram;
+      return;
     }
 
-    render({scene}) {
+    // Create custom override program
+    mesh.depthProgram = new Program(gl, {
+      vertex,
+      fragment,
+      cullFace: null,
+    });
+  }
 
-        // For depth render, replace program with depth override.
-        // Hide meshes not casting shadows.
-        scene.traverse(node => {
-            if (!node.draw) return;
-            if (!!~this.castMeshes.indexOf(node)) {
-                node.program = node.depthProgram;
-            } else {
-                if (node.visible) node.isForceVisibility = true;
-                node.visible = false;
-            }
-        });
+  render({ scene }) {
+    // For depth render, replace program with depth override.
+    // Hide meshes not casting shadows.
+    scene.traverse((node) => {
+      if (!node.draw) return;
+      if (!!~this.castMeshes.indexOf(node)) {
+        node.program = node.depthProgram;
+      } else {
+        if (node.visible) node.isForceVisibility = true;
+        node.visible = false;
+      }
+    });
 
-        // Render the depth shadow map using the light as the camera
-        this.gl.renderer.render({
+    // Render the depth shadow map using the light as the camera
+    this.gl.renderer.render({
+      scene,
             scene, 
+      scene,
+      camera: this.light,
             camera: this.light, 
-            target: this.target,
-        });
+      camera: this.light,
+      target: this.target,
+    });
 
-        // Then switch the program back to the normal one
-        scene.traverse(node => {
-            if (!node.draw) return;
-            if (!!~this.castMeshes.indexOf(node)) {
-                node.program = node.colorProgram;
-            } else {
-                if (node.isForceVisibility) node.visible = true;
-            }
-        });
-    }
+    // Then switch the program back to the normal one
+    scene.traverse((node) => {
+      if (!node.draw) return;
+      if (!!~this.castMeshes.indexOf(node)) {
+        node.program = node.colorProgram;
+      } else {
+        if (node.isForceVisibility) node.visible = true;
+      }
+    });
+  }
 }
 
 const defaultVertex = /* glsl */ `

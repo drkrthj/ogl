@@ -1,158 +1,286 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
-    <meta name="viewport" content="width=device-width, minimal-ui, viewport-fit=cover, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
-    <link rel="icon" type="image/png" href="assets/favicon.png">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, viewport-fit=cover, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no"
+    />
+    <link rel="icon" type="image/png" href="assets/favicon.png" />
 
     <title>OGL • Instancing</title>
-    <link href="assets/main.css" rel="stylesheet">
-</head>
-<body>
+    <link href="assets/main.css" rel="stylesheet" />
+  </head>
+  <body>
     <div class="Info">Instancing. Model by Google Poly</div>
     <script type="module">
-        import {Renderer, Camera, Transform, Texture, Program, Geometry,  Mesh} from '../src/index.mjs';
-        
-        const vertex = /* glsl */ `
-            precision highp float;
-            precision highp int;
+      import {
+        Renderer,
+        Camera,
+        Orbit,
+        Transform,
+        Texture,
+        Box,
+        Program,
+        Geometry,
+        Shadow,
+        Mesh,
+      } from "../src/index.mjs";
 
-            attribute vec2 uv;
-            attribute vec3 position;
+      const vertex = /* glsl */ `
+                  precision highp float;
+                  precision highp int;
 
-            // Add instanced attributes just like any attribute
-            attribute vec3 offset;
-            attribute vec3 random;
+                  attribute vec2 uv;
+                  attribute vec3 position;
 
-            uniform mat4 modelViewMatrix;
-            uniform mat4 projectionMatrix;
-            uniform float uTime;
+                  // Add instanced attributes just like any attribute
+                  attribute vec3 offset;
+                  attribute vec3 random;
 
-            varying vec2 vUv;
-            varying vec3 vNormal;
+                  uniform mat4 modelViewMatrix;
+                  uniform mat4 modelMatrix;
+                  uniform mat4 projectionMatrix;
+                  uniform float uTime;
 
-            void rotate2d(inout vec2 v, float a){
-                mat2 m = mat2(cos(a), -sin(a), sin(a),  cos(a));
-                v = m * v;
-            }
+                  varying vec2 vUv;
+                  varying vec3 vNormal;
 
-            void main() {
-                vUv = uv;
-                
-                // copy position so that we can modify the instances
-                vec3 pos = position;
-                
-                // scale first
-                pos *= 0.9 + random.y * 0.2;
-                
-                // rotate around y axis
-                rotate2d(pos.xz, random.x * 6.28 + 4.0 * uTime * (random.y - 0.5));
-                
-                // rotate around x axis just to add some extra variation
-                rotate2d(pos.zy, random.z * 0.5 * sin(uTime * random.x + random.z * 3.14));
-                
-                pos += offset;
-                
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);;
-            }
-        `;
+                  varying vec3 vColor;
+                  varying vec4 vLightNDC;
+                  uniform mat4 shadowViewMatrix;
+                  uniform mat4 shadowProjectionMatrix;
 
-        const fragment = /* glsl */ `
-            precision highp float;
-            precision highp int;
 
-            uniform float uTime;
-            uniform sampler2D tMap;
+                  // Matrix to shift range from -1->1 to 0->1
+                  const mat4 depthScaleMatrix = mat4(
+                      0.5, 0, 0, 0,
+                      0, 0.5, 0, 0,
+                      0, 0, 0.5, 0,
+                      0.5, 0.5, 0.5, 1
+                  );
 
-            varying vec2 vUv;
+                  void rotate2d(inout vec2 v, float a){
+                      mat2 m = mat2(cos(a), -sin(a), sin(a),  cos(a));
+                      v = m * v;
+                  }
 
-            void main() {
-                vec3 tex = texture2D(tMap, vUv).rgb;
-                
-                gl_FragColor.rgb = tex;
-                gl_FragColor.a = 1.0;
-            }
-        `;
+                  void main() {
+                      vUv = uv;
 
-        {
-            const renderer = new Renderer({dpr: 2});
-            const gl = renderer.gl;
-            document.body.appendChild(gl.canvas);
-            gl.clearColor(1, 1, 1, 1);
+                      // copy position so that we can modify the instances
+                      vec3 pos = position;
 
-            const camera = new Camera(gl, {fov: 15});
-            camera.position.z = 15;
+                      // scale first
+                      pos *= 0.2 + random.y * 0.1;
 
-            function resize() {
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                camera.perspective({aspect: gl.canvas.width / gl.canvas.height});
-            }
-            window.addEventListener('resize', resize, false);
-            resize();
+                      // rotate around y axis
+                    //   rotate2d(pos.xz, random.x * 6.28 + 4.0 * uTime * (random.y - 0.5));
 
-            const scene = new Transform();
+                      // rotate around x axis just to add some extra variation
+                    //   rotate2d(pos.zy, random.z * 0.5 * sin(uTime * random.x + random.z * 3.14));
 
-            const texture = new Texture(gl);
-            const img = new Image();
-            img.onload = () => texture.image = img;
-            img.src = 'assets/acorn.jpg';
+                      pos += offset;
+                      vLightNDC = depthScaleMatrix * shadowProjectionMatrix * shadowViewMatrix * modelMatrix * vec4(position, 1.0);
 
-            const program = new Program(gl, {
-                vertex,
-                fragment,
-                uniforms: {
-                    uTime: {value: 0},
-                    tMap: {value: texture},
-                },
-            });
 
-            let mesh;
-            loadModel();
-            async function loadModel() {
-                const data = await (await fetch(`assets/acorn.json`)).json();
 
-                const num = 20;
+                      vColor = vec3(.5);
 
-                let offset = new Float32Array(num * 3);
-                let random = new Float32Array(num * 3);
-                for (let i = 0; i < num; i++) {
-                    offset.set([
-                        Math.random() * 2 - 1,
-                        Math.random() * 2 - 1,
-                        Math.random() * 2 - 1,
-                    ], i * 3);
 
-                    // unique random values are always handy for instances.
-                    // Here they will be used for rotation, scale and movement.
-                    random.set([Math.random(), Math.random(), Math.random()], i * 3);
-                }
 
-                const geometry = new Geometry(gl, {
-                    position: {size: 3, data: new Float32Array(data.position)},
-                    uv: {size: 2, data: new Float32Array(data.uv)},
-                    normal: {size: 3, data: new Float32Array(data.normal)},
+                      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);;
+                  }
+              `;
 
-                    // simply add the 'instanced' property to flag as an instanced attribute.
-                    // set the value as the divisor number
-                    offset: {instanced: 1, size: 3, data: offset},
-                    random: {instanced: 1, size: 3, data: random},
-                });
+      const fragment = /* glsl */ `
+                  precision highp float;
+                  precision highp int;
 
-                mesh = new Mesh(gl, {geometry, program});
-                mesh.setParent(scene);
-            }
+                  uniform float uTime;
+                  uniform sampler2D tMap;
 
-            requestAnimationFrame(update);
-            function update(t) {
-                requestAnimationFrame(update);
+                  uniform sampler2D tShadow;
 
-                if (mesh) mesh.rotation.y -= 0.005;
-                program.uniforms.uTime.value = t * 0.001;
-                renderer.render({scene, camera});
-            }
+                  varying vec3 vColor;
+                  varying vec4 vLightNDC;
+
+                  float unpackRGBA (vec4 v) {
+                      return dot(v, 1.0 / vec4(1.0, 255.0, 65025.0, 16581375.0));
+                  }
+                  varying vec2 vUv;
+
+                  void main() {
+                      vec3 tex = vec3(.5); //texture2D(tMap, vUv).rgb;
+
+                      vec3 lightPos = vLightNDC.xyz / vLightNDC.w;
+
+                      float bias = 0.001;
+                      float depth = lightPos.z - bias;
+                      float occluder = unpackRGBA(texture2D(tShadow, lightPos.xy));
+
+                      // Compare actual depth from light to the occluded depth rendered in the depth map
+                      // If the occluded depth is smaller, we must be in shadow
+                      float shadow = mix(0.2, 1.0, step(depth, occluder)) + .1;
+
+                      gl_FragColor.rgb = vColor * shadow;
+
+                      // gl_FragColor.rgb = tex;
+                      gl_FragColor.a = 1.0;
+                  }
+              `;
+
+      {
+        const renderer = new Renderer({ dpr: 2 });
+        const gl = renderer.gl;
+        document.body.appendChild(gl.canvas);
+        gl.clearColor(1, 1, 1, 1);
+
+        const camera = new Camera(gl, { fov: 15 });
+        camera.position.z = 15;
+
+        const controls = new Orbit(camera);
+
+        function resize() {
+          renderer.setSize(window.innerWidth, window.innerHeight);
+          camera.perspective({ aspect: gl.canvas.width / gl.canvas.height });
+        }
+        window.addEventListener("resize", resize, false);
+        resize();
+
+        const scene = new Transform();
+
+        // Swap between the 'fov' and 'left/right/etc' lines to switch from an orthographic to perspective camera,
+        // and hence, directional light to spotlight projection.
+        const light = new Camera(gl, {
+          left: -3,
+          right: 3,
+          bottom: -3,
+          top: 3,
+          // fov: 30,
+
+          near: 0.01,
+          far: 20,
+        });
+        light.position.set(1, 1, 1);
+        light.lookAt([-1, 0, 0]);
+
+        // Create shadow instance attached to light camera
+        const shadow = new Shadow(gl, { light });
+
+        const texture = new Texture(gl);
+        const img = new Image();
+        img.onload = () => (texture.image = img);
+        img.src = "assets/acorn.jpg";
+
+        const program = new Program(gl, {
+          vertex,
+          fragment,
+          uniforms: {
+            uTime: { value: 0 },
+            tMap: { value: texture },
+          },
+        });
+
+        const cubeGeometry = new Box(gl);
+        let mesh;
+        loadModel();
+        async function loadModel() {
+          const acorn = await (await fetch(`assets/rounded-cube.json`)).json();
+          const box = new Box(gl, {});
+
+          const cube = {
+            index: box.attributes.index.data,
+            position: box.attributes.position.data,
+            normal: box.attributes.normal.data,
+            uv: box.attributes.uv.data,
+          };
+          const data = cube; //box.attributes;
+
+          console.log({ acorn, box, data });
+
+          const num = 100;
+
+          let offset = new Float32Array(num * 3);
+          let random = new Float32Array(num * 3);
+          for (let i = 0; i < num; i++) {
+            offset.set(
+              [
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1,
+              ],
+              i * 3
+            );
+
+            // unique random values are always handy for instances.
+            // Here they will be used for rotation, scale and movement.
+            random.set([Math.random(), Math.random(), Math.random()], i * 3);
+          }
+
+          //   const geometry = new Geometry(gl, {
+          //     position: { size: 3, data: new Float32Array(data.position) },
+          //     // index: { size: 3, data: new Float32Array(data.index) },
+          //     uv: { size: 2, data: new Float32Array(data.uv) },
+          //     normal: { size: 3, data: new Float32Array(data.normal) },
+
+          //     // simply add the 'instanced' property to flag as an instanced attribute.
+          //     // set the value as the divisor number
+          //     offset: { instanced: 1, size: 3, data: offset },
+          //     random: { instanced: 1, size: 3, data: random },
+          //   });
+
+          const geometry = new Box(gl, {
+            attributes: {
+              offset: { instanced: 1, size: 3, data: offset },
+              random: { instanced: 1, size: 3, data: random },
+            },
+          });
+
+          mesh = new Mesh(gl, { geometry, program });
+          shadow.add({ mesh });
+          mesh.setParent(scene);
         }
 
+        function addGround() {
+          const texture = new Texture(gl);
+          const img = new Image();
+          img.onload = () => (texture.image = img);
+          img.src = "assets/water.jpg";
+
+          const program = new Program(gl, {
+            vertex: vertex,
+            fragment: fragment,
+            uniforms: {
+              tMap: { value: texture },
+            },
+            cullFace: null,
+          });
+
+          const geometry = new Plane(gl);
+
+          const mesh = new Mesh(gl, { geometry, program });
+          mesh.setParent(scene);
+
+          // Use the 'add' method to attach the mesh to the shadow map
+          shadow.add({ mesh });
+
+          mesh.rotation.x = Math.PI / 2;
+          mesh.scale.set(6);
+          mesh.position.y = -100;
+        }
+
+        requestAnimationFrame(update);
+        function update(t) {
+          requestAnimationFrame(update);
+          controls.update();
+          if (mesh) mesh.rotation.y -= 0.0;
+          program.uniforms.uTime.value = t * 0.0;
+          shadow.render({ scene });
+          renderer.render({ scene, camera });
+        }
+      }
     </script>
-</body>
+  </body>
 </html>
